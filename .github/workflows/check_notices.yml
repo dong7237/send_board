@@ -29,7 +29,7 @@ jobs:
       - name: Run checker
         env:
           NOTICE_URL: "https://bizgrad.hanyang.ac.kr/nt1"
-          SMTP_TO: "dong7237@naver.com"
+          SMTP_TO: ${{ secrets.NOTICE_EMAIL_TO }}
           SMTP_USER: ${{ secrets.NAVER_SMTP_USER }}
           SMTP_PASS: ${{ secrets.NAVER_SMTP_PASS }}
         run: python check_notices.py
@@ -45,4 +45,3 @@ jobs:
           git add state.json
           git commit -m "Update state.json"
           git push
-

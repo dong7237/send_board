@@ -18,7 +18,7 @@ STATE_PATH = os.environ.get("STATE_PATH", "state.json").strip()
 # First pages are enough for "daily check". Increase if you want.
 PAGES = int(os.environ.get("PAGES", "3"))
 
-SMTP_TO = os.environ.get("SMTP_TO", "dong7237@naver.com").strip()
+SMTP_TO = os.environ.get("SMTP_TO", "").strip()
 SMTP_USER = os.environ.get("SMTP_USER", "").strip()
 SMTP_PASS = os.environ.get("SMTP_PASS", "").strip()
 
@@ -158,6 +158,8 @@ def parse_notices(html: str) -> list[Notice]:
 def send_email(*, subject: str, body: str) -> None:
     if not SMTP_USER or not SMTP_PASS:
         raise RuntimeError("SMTP_USER / SMTP_PASS are missing. Set GitHub Secrets first.")
+    if not SMTP_TO:
+        raise RuntimeError("SMTP_TO is missing. Set GitHub Secrets first.")
 
     msg = EmailMessage()
     msg["From"] = SMTP_USER

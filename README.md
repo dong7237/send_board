@@ -3,6 +3,9 @@
 매일 한국시간 오전 9:00에 공지사항을 확인합니다.
 새 글이 있으면 메일로 알려줍니다.
 
+- 공지 URL: `https://bizgrad.hanyang.ac.kr/nt1`
+- 받는 메일: GitHub Secret로 설정
+- 첫 실행: 메일 안 보냄 (state만 저장)
 ## 준비물
 
 - GitHub 계정 (무료 플랜)
@@ -20,8 +23,9 @@ GitHub 저장소에서 아래로 들어갑니다.
 
 - `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`
 
-그리고 2개를 추가합니다.
+그리고 3개를 추가합니다.
 
+- `NOTICE_EMAIL_TO`: 받는 메일 주소 (예: `someone@example.com`)
 - `NAVER_SMTP_USER`: 보내는 네이버 메일 주소 (예: `myid@naver.com`)
 - `NAVER_SMTP_PASS`: 네이버 SMTP 비밀번호 (보통 `앱 비밀번호` 권장)
 
@@ -43,6 +47,5 @@ GitHub 저장소에서 아래로 들어갑니다.
 
 ## 자주 바꾸는 것
 
-- 받는 메일을 바꾸고 싶으면: `.github/workflows/check_notices.yml`의 `SMTP_TO` 수정
+- 받는 메일을 바꾸고 싶으면: Secret `NOTICE_EMAIL_TO` 값 수정
 - 더 많은 글을 보고 싶으면: 워크플로에 `PAGES` 환경변수를 추가해서 숫자를 올리기
-
