@@ -3,10 +3,6 @@
 매일 한국시간 오전 9:00에 공지사항을 확인합니다.
 새 글이 있으면 메일로 알려줍니다.
 
-- 공지 URL: `https://bizgrad.hanyang.ac.kr/nt1`
-- 받는 메일: `dong7237@naver.com`
-- 첫 실행: 메일 안 보냄 (state만 저장)
-
 ## 준비물
 
 - GitHub 계정 (무료 플랜)
