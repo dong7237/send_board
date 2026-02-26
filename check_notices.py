@@ -21,6 +21,12 @@ PAGES = int(os.environ.get("PAGES", "3"))
 SMTP_TO = os.environ.get("SMTP_TO", "").strip()
 SMTP_USER = os.environ.get("SMTP_USER", "").strip()
 SMTP_PASS = os.environ.get("SMTP_PASS", "").strip()
+SMTP_FROM = os.environ.get("SMTP_FROM", "").strip()
+
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.naver.com").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
+SMTP_SECURITY = os.environ.get("SMTP_SECURITY", "").strip().lower()
+SMTP_TIMEOUT_SEC = int(os.environ.get("SMTP_TIMEOUT_SEC", "30"))
 
 
 @dataclass(frozen=True)
@@ -155,6 +161,51 @@ def parse_notices(html: str) -> list[Notice]:
     return out
 
 
+def _default_security_for_port(port: int) -> str:
+    if port == 465:
+        return "ssl"
+    if port == 587:
+        return "starttls"
+    return "plain"
+
+
+def _guess_email_domain(host: str) -> str | None:
+    host = (host or "").lower()
+    if host.endswith("naver.com"):
+        return "naver.com"
+    if host.endswith("gmail.com") or host.endswith("google.com"):
+        return "gmail.com"
+    if host.endswith("outlook.com") or host.endswith("office365.com"):
+        return "outlook.com"
+    return None
+
+
+def _ensure_email_address(value: str, *, host: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return value
+    if "@" in value:
+        return value
+    domain = os.environ.get("SMTP_USER_DOMAIN", "").strip() or _guess_email_domain(host)
+    return f"{value}@{domain}" if domain else value
+
+
+def _smtp_connect(*, host: str, port: int, security: str) -> smtplib.SMTP:
+    security = (security or "").strip().lower() or _default_security_for_port(port)
+
+    if security == "ssl":
+        smtp: smtplib.SMTP = smtplib.SMTP_SSL(host, port, timeout=SMTP_TIMEOUT_SEC)
+        smtp.ehlo()
+        return smtp
+
+    smtp = smtplib.SMTP(host, port, timeout=SMTP_TIMEOUT_SEC)
+    smtp.ehlo()
+    if security == "starttls":
+        smtp.starttls()
+        smtp.ehlo()
+    return smtp
+
+
 def send_email(*, subject: str, body: str) -> None:
     if not SMTP_USER or not SMTP_PASS:
         raise RuntimeError("SMTP_USER / SMTP_PASS are missing. Set GitHub Secrets first.")
@@ -162,18 +213,37 @@ def send_email(*, subject: str, body: str) -> None:
         raise RuntimeError("SMTP_TO is missing. Set GitHub Secrets first.")
 
     msg = EmailMessage()
-    msg["From"] = SMTP_USER
+    from_addr = SMTP_FROM or SMTP_USER
+    msg["From"] = _ensure_email_address(from_addr, host=SMTP_HOST)
     msg["To"] = SMTP_TO
     msg["Subject"] = subject
     msg.set_content(body)
 
-    # Naver SMTP
-    host = os.environ.get("SMTP_HOST", "smtp.naver.com").strip()
-    port = int(os.environ.get("SMTP_PORT", "465"))
+    login_user_candidates = [SMTP_USER]
+    if "@" not in SMTP_USER:
+        login_user_candidates.append(_ensure_email_address(SMTP_USER, host=SMTP_HOST))
 
-    with smtplib.SMTP_SSL(host, port) as smtp:
-        smtp.login(SMTP_USER, SMTP_PASS)
-        smtp.send_message(msg)
+    last_auth_error: Exception | None = None
+    for login_user in login_user_candidates:
+        if not login_user:
+            continue
+        try:
+            with _smtp_connect(host=SMTP_HOST, port=SMTP_PORT, security=SMTP_SECURITY) as smtp:
+                smtp.login(login_user, SMTP_PASS)
+                smtp.send_message(msg)
+                return
+        except smtplib.SMTPAuthenticationError as e:
+            last_auth_error = e
+            continue
+
+    if last_auth_error is not None:
+        raise RuntimeError(
+            "SMTP 인증 실패(535). "
+            "NAVER_SMTP_USER/SMTP_USER가 '아이디'만이면 '아이디@naver.com'으로도 시도합니다. "
+            "그래도 실패하면 비밀번호가 '앱 비밀번호(메일)'인지, "
+            "네이버 메일 설정에서 IMAP/SMTP 사용이 켜져 있는지, "
+            "GitHub Secrets 값이 최신인지 확인하세요."
+        ) from last_auth_error
 
 
 def format_email(notices: list[Notice]) -> tuple[str, str]:
