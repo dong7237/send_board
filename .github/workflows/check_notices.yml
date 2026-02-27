@@ -32,6 +32,10 @@ jobs:
           SMTP_TO: ${{ secrets.NOTICE_EMAIL_TO }}
           SMTP_USER: ${{ secrets.NAVER_SMTP_USER }}
           SMTP_PASS: ${{ secrets.NAVER_SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.NAVER_SMTP_USER }}
+          SMTP_HOST: "smtp.naver.com"
+          SMTP_PORT: "587"
+          SMTP_SECURITY: "starttls"
         run: python check_notices.py
 
       - name: Commit state.json (if changed)

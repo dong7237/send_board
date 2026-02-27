@@ -27,6 +27,7 @@ SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.naver.com").strip()
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
 SMTP_SECURITY = os.environ.get("SMTP_SECURITY", "").strip().lower()
 SMTP_TIMEOUT_SEC = int(os.environ.get("SMTP_TIMEOUT_SEC", "30"))
+SMTP_DEBUG = os.environ.get("SMTP_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -169,6 +170,35 @@ def _default_security_for_port(port: int) -> str:
     return "plain"
 
 
+def _normalize_security(security: str, *, port: int) -> str:
+    sec = (security or "").strip().lower()
+    if not sec:
+        return _default_security_for_port(port)
+    if sec in {"starttls", "tls"}:
+        return "starttls"
+    if sec in {"ssl", "smtps"}:
+        return "ssl"
+    if sec in {"plain", "none"}:
+        return "plain"
+    return sec
+
+
+def _debug(msg: str) -> None:
+    if SMTP_DEBUG:
+        print(f"[smtp] {msg}", file=sys.stderr)
+
+
+def _unique_keep_order(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
 def _guess_email_domain(host: str) -> str | None:
     host = (host or "").lower()
     if host.endswith("naver.com"):
@@ -190,8 +220,31 @@ def _ensure_email_address(value: str, *, host: str) -> str:
     return f"{value}@{domain}" if domain else value
 
 
+def _password_candidates(password: str, *, host: str) -> list[str]:
+    candidates = [password]
+    if host.lower().endswith("naver.com"):
+        compact = "".join(password.split())
+        if compact:
+            candidates.append(compact)
+    return _unique_keep_order(candidates)
+
+
+def _connection_profiles(*, host: str, port: int, security: str) -> list[tuple[int, str]]:
+    profiles = [(port, _normalize_security(security, port=port))]
+    if host.lower().endswith("naver.com"):
+        profiles.extend([(587, "starttls"), (465, "ssl")])
+    unique_profiles: list[tuple[int, str]] = []
+    seen: set[tuple[int, str]] = set()
+    for profile in profiles:
+        if profile in seen:
+            continue
+        seen.add(profile)
+        unique_profiles.append(profile)
+    return unique_profiles
+
+
 def _smtp_connect(*, host: str, port: int, security: str) -> smtplib.SMTP:
-    security = (security or "").strip().lower() or _default_security_for_port(port)
+    security = _normalize_security(security, port=port)
 
     if security == "ssl":
         smtp: smtplib.SMTP = smtplib.SMTP_SSL(host, port, timeout=SMTP_TIMEOUT_SEC)
@@ -219,31 +272,48 @@ def send_email(*, subject: str, body: str) -> None:
     msg["Subject"] = subject
     msg.set_content(body)
 
-    login_user_candidates = [SMTP_USER]
+    login_user_candidates = [SMTP_USER.strip()]
     if "@" not in SMTP_USER:
         login_user_candidates.append(_ensure_email_address(SMTP_USER, host=SMTP_HOST))
+    login_user_candidates = _unique_keep_order(login_user_candidates)
+
+    password_candidates = _password_candidates(SMTP_PASS, host=SMTP_HOST)
+    connection_profiles = _connection_profiles(host=SMTP_HOST, port=SMTP_PORT, security=SMTP_SECURITY)
 
     last_auth_error: Exception | None = None
-    for login_user in login_user_candidates:
-        if not login_user:
-            continue
-        try:
-            with _smtp_connect(host=SMTP_HOST, port=SMTP_PORT, security=SMTP_SECURITY) as smtp:
-                smtp.login(login_user, SMTP_PASS)
-                smtp.send_message(msg)
-                return
-        except smtplib.SMTPAuthenticationError as e:
-            last_auth_error = e
-            continue
+    last_error: Exception | None = None
+
+    for port, security in connection_profiles:
+        for login_user in login_user_candidates:
+            for password in password_candidates:
+                try:
+                    _debug(f"try host={SMTP_HOST} port={port} security={security} user={login_user}")
+                    with _smtp_connect(host=SMTP_HOST, port=port, security=security) as smtp:
+                        smtp.login(login_user, password)
+                        smtp.send_message(msg)
+                        return
+                except smtplib.SMTPAuthenticationError as e:
+                    last_auth_error = e
+                    last_error = e
+                    _debug(f"auth failed: code={getattr(e, 'smtp_code', 'unknown')}")
+                    continue
+                except (smtplib.SMTPException, OSError) as e:
+                    last_error = e
+                    _debug(f"connection/send failed: {e}")
+                    continue
 
     if last_auth_error is not None:
         raise RuntimeError(
             "SMTP 인증 실패(535). "
-            "NAVER_SMTP_USER/SMTP_USER가 '아이디'만이면 '아이디@naver.com'으로도 시도합니다. "
-            "그래도 실패하면 비밀번호가 '앱 비밀번호(메일)'인지, "
-            "네이버 메일 설정에서 IMAP/SMTP 사용이 켜져 있는지, "
-            "GitHub Secrets 값이 최신인지 확인하세요."
+            "아이디 형식/비밀번호 공백 제거/465(SSL)·587(STARTTLS) 조합까지 재시도했지만 실패했습니다. "
+            "NAVER_SMTP_USER는 반드시 'id@naver.com', NAVER_SMTP_PASS는 '앱 비밀번호(메일)'만 사용하세요. "
+            "네이버 메일 설정에서 IMAP/SMTP 사용 ON, GitHub Secrets 재저장 후 워크플로를 다시 실행하세요."
         ) from last_auth_error
+
+    if last_error is not None:
+        raise RuntimeError(f"SMTP 연결/전송 실패: {last_error}") from last_error
+
+    raise RuntimeError("SMTP 전송 실패: 원인을 확인할 수 없습니다.")
 
 
 def format_email(notices: list[Notice]) -> tuple[str, str]:

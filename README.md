@@ -28,9 +28,10 @@ GitHub 저장소에서 아래로 들어갑니다.
 
 - `NOTICE_EMAIL_TO`: 받는 메일 주소 (예: `someone@example.com`)
 - `NAVER_SMTP_USER`: 보내는 네이버 메일 주소 (예: `myid@naver.com`)
-- `NAVER_SMTP_PASS`: 네이버 SMTP 비밀번호 (보통 `앱 비밀번호` 권장)
+- `NAVER_SMTP_PASS`: 네이버 `앱 비밀번호(메일)` (일반 로그인 비밀번호 불가)
 
-네이버에서 메일 전송이 안 되면, 네이버 메일 설정에서 `POP3/IMAP/SMTP 사용`을 켜야 할 수 있습니다.
+네이버에서 메일 전송이 안 되면, 네이버 메일 설정에서 `POP3/IMAP/SMTP 사용`을 켜야 합니다.
+이 저장소 기본 SMTP 설정은 `smtp.naver.com:587` + `STARTTLS`입니다.
 
 ### 3) 한번 실행해보기 (테스트)
 
